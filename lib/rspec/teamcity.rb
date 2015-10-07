@@ -15,7 +15,7 @@
 # @author Roman.Chernyatchik
 # @date 18:02:54
 
-require_relative 'formatter_initializer.rb'
+require_relative 'teamcity/formatter_initializer'
 
 require_relative 'teamcity/utils/logger_util'
 require_relative 'teamcity/rake_exceptions'
@@ -31,7 +31,7 @@ require_relative 'teamcity/utils/runner_utils'
 require_relative 'teamcity/utils/url_formatter'
 
 if Spec::Runner::Formatter::RSPEC_VERSION_3
-  require_relative 'rspec3_formatter'
+  require_relative 'teamcity_rspec3'
 else
 module Spec
   module Runner
