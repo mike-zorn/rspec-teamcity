@@ -12,7 +12,7 @@ Installation
 
 Add to your Gemfile
 ```
-gem 'rspec-teamcity', git: 'https://github.com/apechimp/rspec-teamcity'
+gem 'rspec-teamcity', '~> 0.0.1'
 ```
 
 Usage
