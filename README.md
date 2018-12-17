@@ -12,7 +12,7 @@ Installation
 
 Add to your Gemfile
 ```
-gem 'rspec-teamcity', '~> 0.0.1'
+gem 'rspec-teamcity', '~> 1.0.0'
 ```
 
 Usage
