@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     https://confluence.jetbrains.com/display/TCD8/Build+Script+Interaction+with+TeamCity#BuildScriptInteractionwithTeamCity-ReportingTests
     EOF
   spec.homepage      = "https://github.com/apechimp/rspec-teamcity"
-  spec.license       = "GPLv3"
+  spec.license       = "GPL-3.0"
 
   spec.files         = `git ls-files -z`.split("\x0")
   spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
