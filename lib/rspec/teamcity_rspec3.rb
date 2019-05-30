@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'teamcity/utils/logger_util'
-require 'teamcity/rake_exceptions'
-require 'teamcity/rakerunner_consts'
+require_relative 'teamcity/utils/logger_util'
+require_relative 'teamcity/rake_exceptions'
+require_relative 'teamcity/rakerunner_consts'
 
-require 'teamcity/runner_common'
-require 'teamcity/utils/service_message_factory'
-require 'teamcity/utils/std_capture_helper'
-require 'teamcity/utils/runner_utils'
-require 'teamcity/utils/url_formatter'
+require_relative 'teamcity/runner_common'
+require_relative 'teamcity/utils/service_message_factory'
+require_relative 'teamcity/utils/std_capture_helper'
+require_relative 'teamcity/utils/runner_utils'
+require_relative 'teamcity/utils/url_formatter'
 
 module Spec
   module Runner
@@ -117,7 +117,6 @@ module Spec
         #########################################################
         #########################################################
         @@RUNNING_EXAMPLES_STORAGE = {}
-        @@QUEUED_MESSAGES = {}
 
         def example_started(example_notification)
           example = example_notification.example
@@ -133,10 +132,11 @@ module Spec
 
           # Start capturing...
           std_files = capture_output_start_external
+          started_at_ms = get_time_in_ms(example.execution_result.started_at)
 
           debug_log('Output capturing started.')
 
-          put_data_to_storage(example, RunningExampleData.new(my_running_example_full_name, '', *std_files))
+          put_data_to_storage(example, RunningExampleData.new(my_running_example_full_name, '', started_at_ms, *std_files))
         end
 
         def example_passed(example_notification)
@@ -157,39 +157,38 @@ module Spec
           # example service data
           example_data = get_data_from_storage(example)
           additional_flowid_suffix = example_data.additional_flowid_suffix
-          running_example_full_name = example_data.full_name
+          running_example_full_name = generate_description(example)
 
           failure = example.exception
-          expectation_not_met = failure.kind_of?(RSpec::Expectations::ExpectationNotMetError)
-          pending_fixed = failure.kind_of?(RSpec::Core::Pending::PendingExampleFixedError)
-
           # Failure message:
-          message = if failure.nil?
+          def failure.expectation_not_met?
+            self.exception.kind_of?(RSpec::Expectations::ExpectationNotMetError)
+          end
+
+          def failure.pending_fixed?
+            self.exception.kind_of?(RSpec::Core::Pending::PendingExampleFixedError)
+          end
+
+          message = if failure.exception.nil?
                       # for unknown failure
                       '[Without Exception]'
-                    elsif expectation_not_met || pending_fixed
-                      failure.message
+                    elsif failure.expectation_not_met? || failure.pending_fixed?
+                      failure.exception.message
                     else
                       # for other exception
-                      "#{failure.class.name}: #{failure.message}"
+                      "#{failure.exception.class.name}: #{failure.exception.message}"
                     end
 
           # Backtrace
-
-          if example_notification.respond_to? :fully_formatted_lines
-            backtrace_lines = example_notification.fully_formatted_lines(0, RSpec::Core::Notifications::NullColorizer)
-          else
-            backtrace_lines = example_notification.formatted_backtrace
-          end
-          backtrace = backtrace_lines.join("\n")
+          backtrace = example_notification.formatted_backtrace.join("\n")
 
           debug_log("Example failing... full name = [#{running_example_full_name}], Message:\n#{message} \n\nBackrace:\n#{backtrace}\n\n, additional flowid suffix=[#{additional_flowid_suffix}]")
 
           # Expectation failures will be shown as failures and other exceptions as Errors
-          if expectation_not_met
-            add_to_queue(example.object_id, @message_factory.create_test_failed(running_example_full_name, message, backtrace))
+          if failure.expectation_not_met?
+            log(@message_factory.create_test_failed(running_example_full_name, message, backtrace))
           else
-            add_to_queue(example.object_id, @message_factory.create_test_error(running_example_full_name, message, backtrace))
+            log(@message_factory.create_test_error(running_example_full_name, message, backtrace))
           end
           close_test_block(example)
         end
@@ -209,23 +208,23 @@ module Spec
           running_example_full_name = example_data.full_name
 
           debug_log("Example pending... [#{@groups_stack.last}].[#{running_example_full_name}] - #{message}, additional flowid suffix=[#{additional_flowid_suffix}]")
-          add_to_queue(example.object_id, @message_factory.create_test_ignored(running_example_full_name, "Pending: #{message}"))
+          log(@message_factory.create_test_ignored(running_example_full_name, "Pending: #{message}"))
 
           close_test_block(example)
         end
 
 
-        # see snippet_extractor.rb
-        # Here we can add file link or show code lined
-        #        def extra_failure_content(failure)
-        #          require 'spec/runner/formatter/snippet_extractor'
-        #          @snippet_extractor ||= SnippetExtractor.new
-        #          "    <pre class=\"ruby\"><code>#{@snippet_extractor.snippet(failure.exception)}</code></pre>"
-        #        end
+# see snippet_extractor.rb
+# Here we can add file link or show code lined
+#        def extra_failure_content(failure)
+#          require 'spec/runner/formatter/snippet_extractor'
+#          @snippet_extractor ||= SnippetExtractor.new
+#          "    <pre class=\"ruby\"><code>#{@snippet_extractor.snippet(failure.exception)}</code></pre>"
+#        end
 
-        # For Rspec:
-        #  4 args - rspec < 2.0
-        #  0 args - rspec >= 2.0
+# For Rspec:
+#  4 args - rspec < 2.0
+#  0 args - rspec >= 2.0
         def dump_summary(summary_notification)
           duration = summary_notification.duration
           example_count = summary_notification.example_count
@@ -249,7 +248,7 @@ module Spec
 
           #Really must be '@example_count == example_count', it is hack for spec trunk tests
           if !@setup_failed && @example_count > example_count
-            msg = "#{RUNNER_ISNT_COMPATIBLE_MESSAGE}Error: Not all examples have been run! (#{example_count} of #{@example_count})\n#{gather_unfinished_examples_name}"
+            msg = "#{RUNNER_ISNT_COMPATIBLE_MESSAGE}Error: Not all examples have been run! (#{count_notification} of #{@count_notification})\n#{gather_unfinished_examples_name}"
 
             log_and_raise_internal_error msg
             debug_log(msg)
@@ -267,12 +266,13 @@ module Spec
           debug_log("Summary finished.")
         end
 
-        def seed(notification)
-          log(notification.fully_formatted) if notification.seed_used?
-        end
-
         def close(notification)
           tc_rspec_do_close
+        end
+
+        def seed(notification)
+          return unless notification.seed_used?
+          log notification.fully_formatted
         end
 
         ###########################################################################
@@ -331,20 +331,14 @@ module Spec
         def close_test_block(example)
           example_data = remove_data_from_storage(example)
           finished_at_ms = get_time_in_ms(example.execution_result.finished_at)
-          started_at_ms = get_time_in_ms(example.execution_result.started_at)
-          duration = finished_at_ms - started_at_ms
+          duration = finished_at_ms - example_data.start_time_in_ms
 
           additional_flowid_suffix = example_data.additional_flowid_suffix
-          starting_example_full_name = example_data.full_name
-
-          my_running_example_desc = example_description(example)
-          current_group_description = @groups_stack.last
-          running_example_full_name = "#{current_group_description} #{my_running_example_desc}"
+          running_example_full_name = generate_description(example)
 
           debug_log("Example finishing... full example name = [#{running_example_full_name}], duration = #{duration} ms, additional flowid suffix=[#{additional_flowid_suffix}]")
-          diagnostic_info = "rspec [#{::RSpec::Core::Version::STRING}]" + ", f/s=(#{finished_at_ms}, #{started_at_ms}), duration=#{duration}, time.now=#{Time.now.to_s}, raw[:started_at]=#{example.execution_result.started_at.to_s}, raw[:finished_at]=#{example.execution_result.finished_at.to_s}, raw[:run_time]=#{example.execution_result.run_time.to_s}"
-
-          output_queue_to_log(example.object_id, starting_example_full_name, running_example_full_name)
+          diagnostic_info = "rspec [#{::RSpec::Core::Version::STRING}]" + ", f/s=(#{finished_at_ms}, #{example_data.start_time_in_ms}), duration=#{duration}, time.now=#{Time.now.to_s}, raw[:started_at]=#{example.execution_result.started_at.to_s}, raw[:finished_at]=#{example.execution_result.finished_at.to_s}, raw[:run_time]=#{example.execution_result.run_time.to_s}"
+          
           log(@message_factory.create_test_finished(running_example_full_name, duration, ::Rake::TeamCity.is_in_buildserver_mode ? nil : diagnostic_info))
         end
 
@@ -357,11 +351,14 @@ module Spec
         def stop_capture_output_and_log_it(example)
           example_data = get_data_from_storage(example)
           additional_flowid_suffix = example_data.additional_flowid_suffix
-          running_example_full_name = example_data.full_name
+          starting_example_full_name = example_data.full_name
+          running_example_full_name = generate_description(example)
 
           stdout_string, stderr_string = capture_output_end_external(*example_data.get_std_files)
           debug_log("Example capturing was stopped.")
-
+          
+          output_queue_to_log(example.object_id, starting_example_full_name, running_example_full_name)
+          
           debug_log("My stdOut: [#{stdout_string}] additional flow id=[#{additional_flowid_suffix}]")
           if stdout_string && !stdout_string.empty?
             log(@message_factory.create_test_output_message(running_example_full_name, true, stdout_string))
@@ -436,6 +433,12 @@ module Spec
           end
           @@QUEUED_MESSAGES[id] = nil
         end
+      
+        def generate_description(example)
+          my_running_example_desc = example_description(example)
+          current_group_description = @groups_stack.last
+          "#{current_group_description} #{my_running_example_desc}"
+        end
 
         ######################################################
         ######################################################
@@ -444,15 +447,17 @@ module Spec
           attr_reader :full_name # full task name, example name in build log
           #          TODO: Remove!
           attr_reader :additional_flowid_suffix # to support concurrently running examples
+          attr_reader :start_time_in_ms # start time of example
           attr_reader :stdout_file_old # before capture
           attr_reader :stderr_file_old # before capture
           attr_reader :stdout_file_new #current capturing storage
           attr_reader :stderr_file_new # current capturing storage
 
-          def initialize(full_name, additional_flowid_suffix, stdout_file_old, stderr_file_old, stdout_file_new, stderr_file_new)
+          def initialize(full_name, additional_flowid_suffix, start_time_in_ms, stdout_file_old, stderr_file_old, stdout_file_new, stderr_file_new)
             @full_name = full_name
 #          TODO: Remove!
             @additional_flowid_suffix = additional_flowid_suffix
+            @start_time_in_ms = start_time_in_ms
             @stdout_file_old = stdout_file_old
             @stderr_file_old = stderr_file_old
             @stdout_file_new = stdout_file_new
@@ -467,3 +472,4 @@ module Spec
     end
   end
 end
+
