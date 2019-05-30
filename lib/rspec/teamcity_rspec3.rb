@@ -422,15 +422,12 @@ module Spec
         end
       
         def add_to_queue(id, message)
-          @@QUEUED_MESSAGES[id] ||= []
-          @@QUEUED_MESSAGES[id].push message
+          @@QUEUED_MESSAGES[id] = message
         end
 
         def output_queue_to_log(id, old_description, new_description)
-          @@QUEUED_MESSAGES[id].each do |message|
-            updated_message = message.sub(old_description, new_description)
-            log(updated_message)
-          end
+          updated_message = @@QUEUED_MESSAGES[id].sub(old_description, new_description)
+          log(updated_message)
           @@QUEUED_MESSAGES[id] = nil
         end
       
