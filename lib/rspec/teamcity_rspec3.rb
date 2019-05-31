@@ -128,7 +128,7 @@ module Spec
 
           # Send open event
           debug_log("Example starting.. - full name = [#{my_running_example_full_name}], desc = [#{my_running_example_desc}]")
-          log(@message_factory.create_test_started(my_running_example_full_name, location_from_link(*extract_source_location_from_example(example))))
+          add_to_queue(example.object_id, @message_factory.create_test_started(my_running_example_full_name, location_from_link(*extract_source_location_from_example(example))))
 
           # Start capturing...
           std_files = capture_output_start_external
@@ -157,7 +157,7 @@ module Spec
           # example service data
           example_data = get_data_from_storage(example)
           additional_flowid_suffix = example_data.additional_flowid_suffix
-          running_example_full_name = example_data.full_name
+          running_example_full_name = generate_description(example)
 
           failure = example.exception
           # Failure message:
@@ -334,11 +334,11 @@ module Spec
           duration = finished_at_ms - example_data.start_time_in_ms
 
           additional_flowid_suffix = example_data.additional_flowid_suffix
-          running_example_full_name = example_data.full_name
+          running_example_full_name = generate_description(example)
 
           debug_log("Example finishing... full example name = [#{running_example_full_name}], duration = #{duration} ms, additional flowid suffix=[#{additional_flowid_suffix}]")
           diagnostic_info = "rspec [#{::RSpec::Core::Version::STRING}]" + ", f/s=(#{finished_at_ms}, #{example_data.start_time_in_ms}), duration=#{duration}, time.now=#{Time.now.to_s}, raw[:started_at]=#{example.execution_result.started_at.to_s}, raw[:finished_at]=#{example.execution_result.finished_at.to_s}, raw[:run_time]=#{example.execution_result.run_time.to_s}"
-
+          
           log(@message_factory.create_test_finished(running_example_full_name, duration, ::Rake::TeamCity.is_in_buildserver_mode ? nil : diagnostic_info))
         end
 
@@ -351,11 +351,14 @@ module Spec
         def stop_capture_output_and_log_it(example)
           example_data = get_data_from_storage(example)
           additional_flowid_suffix = example_data.additional_flowid_suffix
-          running_example_full_name = example_data.full_name
+          starting_example_full_name = example_data.full_name
+          running_example_full_name = generate_description(example)
 
           stdout_string, stderr_string = capture_output_end_external(*example_data.get_std_files)
           debug_log("Example capturing was stopped.")
-
+          
+          output_queue_to_log(example.object_id, starting_example_full_name, running_example_full_name)
+          
           debug_log("My stdOut: [#{stdout_string}] additional flow id=[#{additional_flowid_suffix}]")
           if stdout_string && !stdout_string.empty?
             log(@message_factory.create_test_output_message(running_example_full_name, true, stdout_string))
@@ -416,6 +419,22 @@ module Spec
 
         def put_data_to_storage(example, data)
           @@RUNNING_EXAMPLES_STORAGE[example.object_id] = data
+        end
+      
+        def add_to_queue(id, message)
+          @@QUEUED_MESSAGES[id] = message
+        end
+
+        def output_queue_to_log(id, old_description, new_description)
+          updated_message = @@QUEUED_MESSAGES[id].sub(old_description, new_description)
+          log(updated_message)
+          @@QUEUED_MESSAGES[id] = nil
+        end
+      
+        def generate_description(example)
+          my_running_example_desc = example_description(example)
+          current_group_description = @groups_stack.last
+          "#{current_group_description} #{my_running_example_desc}"
         end
 
         ######################################################
