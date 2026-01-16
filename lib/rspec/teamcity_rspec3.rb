@@ -117,6 +117,7 @@ module Spec
         #########################################################
         #########################################################
         @@RUNNING_EXAMPLES_STORAGE = {}
+        @@QUEUED_MESSAGES = []
 
         def example_started(example_notification)
           example = example_notification.example
